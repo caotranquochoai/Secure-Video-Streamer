@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Viewer - Secure Video Streamer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Secure Video Streamer</h1>
+        <p>Dán URL của tệp .vcc và nhập mật khẩu để xem.</p>
+        
+        <div id="input-form">
+            <input type="url" id="video-url" placeholder="Dán URL của tệp .vcc vào đây" required>
+            <input type="password" id="video-password" placeholder="Nhập mật khẩu của tệp" required>
+            <button id="view-btn">Xem Video</button>
+        </div>
+
+        <div id="loading-indicator" class="hidden">
+            <p>Đang xử lý và tải tệp, vui lòng chờ...</p>
+            <div class="spinner"></div>
+        </div>
+
+        <div id="video-container" class="hidden">
+            <video id="video-player" controls autoplay width="100%"></video>
+        </div>
+        
+        <div id="error-message" class="hidden error"></div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const viewBtn = document.getElementById('view-btn');
+            const videoUrlInput = document.getElementById('video-url');
+            const videoPasswordInput = document.getElementById('video-password');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const videoContainer = document.getElementById('video-container');
+            const videoPlayer = document.getElementById('video-player');
+            const errorMessage = document.getElementById('error-message');
+
+            async function requestStream() {
+                const url = videoUrlInput.value;
+                const password = videoPasswordInput.value;
+
+                if (!url || !password) {
+                    showError('Vui lòng nhập cả URL và mật khẩu.');
+                    return;
+                }
+
+                hideError();
+                loadingIndicator.classList.remove('hidden');
+                videoContainer.classList.add('hidden');
+
+                try {
+                    const response = await fetch('/api/request_stream', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ url: url, password: password }),
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(result.error || 'Yêu cầu thất bại.');
+                    }
+
+                    loadingIndicator.classList.add('hidden');
+                    videoContainer.classList.remove('hidden');
+                    videoPlayer.src = result.stream_url;
+                    videoPlayer.load();
+
+                } catch (error) {
+                    showError(error.message);
+                    loadingIndicator.classList.add('hidden');
+                }
+            }
+
+            function showError(message) {
+                errorMessage.textContent = `Lỗi: ${message}`;
+                errorMessage.classList.remove('hidden');
+            }
+
+            function hideError() {
+                errorMessage.classList.add('hidden');
+            }
+
+            viewBtn.addEventListener('click', requestStream);
+        });
+    </script>
+</body>
+</html>

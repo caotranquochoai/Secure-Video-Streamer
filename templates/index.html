@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Secure Video Streamer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Secure Video Streamer - Admin Dashboard</h1>
+        <div class="toolbar">
+            <input type="search" id="search-box" placeholder="Tìm kiếm theo tên, hash, url...">
+            <div class="actions-group">
+                <button id="scan-btn">Quét Tệp Cục bộ</button>
+                <button id="refresh-btn">Làm mới</button>
+            </div>
+        </div>
+        <p>Tổng dung lượng: <strong id="total-size">0 MB</strong> | Tổng số tệp: <strong id="total-files">0</strong></p>
+        
+        <table id="cache-table">
+            <thead>
+                <tr>
+                    <th>Tên Gốc</th>
+                    <th>Tên Tệp Mã hóa</th>
+                    <th>Nguồn</th>
+                    <th>Dung lượng</th>
+                    <th>URL Gốc / Ngày sửa đổi</th>
+                    <th>Hành động</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Dữ liệu sẽ được chèn vào đây bằng JavaScript -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const tableBody = document.querySelector('#cache-table tbody');
+            const totalSizeEl = document.getElementById('total-size');
+            const totalFilesEl = document.getElementById('total-files');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const scanBtn = document.getElementById('scan-btn');
+            const searchBox = document.getElementById('search-box');
+            let allFiles = []; // Lưu trữ toàn bộ danh sách tệp
+
+            async function fetchFiles() {
+                try {
+                    const response = await fetch('/api/cache');
+                    if (!response.ok) throw new Error('Không thể lấy dữ liệu từ API');
+                    allFiles = await response.json();
+                    filterAndRenderTable();
+                } catch (error) {
+                    console.error('Lỗi:', error);
+                    tableBody.innerHTML = `<tr><td colspan="6" class="error">Không thể tải danh sách tệp. Vui lòng thử lại.</td></tr>`;
+                }
+            }
+
+            function filterAndRenderTable() {
+                const searchTerm = searchBox.value.toLowerCase();
+                const filteredFiles = allFiles.filter(file => {
+                    return (file.name.toLowerCase().includes(searchTerm) ||
+                            file.original_name.toLowerCase().includes(searchTerm) ||
+                            file.url.toLowerCase().includes(searchTerm));
+                });
+                renderTable(filteredFiles);
+            }
+
+            function renderTable(files) {
+                tableBody.innerHTML = '';
+                let totalSize = 0;
+                totalFilesEl.textContent = files.length;
+
+                if (files.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="6">Không tìm thấy tệp nào.</td></tr>';
+                } else {
+                    files.sort((a, b) => b.timestamp - a.timestamp);
+                    files.forEach(file => {
+                        const row = document.createElement('tr');
+                        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                        totalSize += file.size;
+
+                        const date = new Date(file.timestamp * 1000).toLocaleString('vi-VN');
+                        const sourceInfo = file.source === 'cache'
+                            ? `<a href="${file.url}" target="_blank" title="${file.url}">${file.url.substring(0, 30)}...</a>`
+                            : `<span>${date}</span>`;
+
+                        row.innerHTML = `
+                            <td class="original-name">${file.original_name}</td>
+                            <td class="filename">${file.name}</td>
+                            <td><span class="source-tag source-${file.source}">${file.source}</span></td>
+                            <td>${sizeMB} MB</td>
+                            <td>${sourceInfo}</td>
+                            <td class="actions">
+                                <button class="play-btn" data-filename="${file.name}">Phát</button>
+                                <button class="delete-btn" data-filename="${file.name}" data-source="${file.source}">Xóa</button>
+                            </td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                }
+                totalSizeEl.textContent = `${(totalSize / (1024 * 1024)).toFixed(2)} MB`;
+            }
+
+            async function deleteFile(filename, source) {
+                const confirmMessage = source === 'local'
+                    ? `HÀNH ĐỘNG NGUY HIỂM!\n\nBạn có chắc chắn muốn XÓA VĨNH VIỄN tệp cục bộ ${filename} không? Hành động này không thể hoàn tác.`
+                    : `Bạn có chắc chắn muốn xóa tệp ${filename} khỏi bộ đệm?`;
+
+                if (!confirm(confirmMessage)) return;
+
+                try {
+                    const response = await fetch(`/api/cache/delete/${filename}`, { method: 'DELETE' });
+                    const result = await response.json();
+                    alert(result.message || result.error);
+                    if (response.ok) fetchFiles();
+                } catch (error) {
+                    console.error('Lỗi khi xóa tệp:', error);
+                    alert('Đã xảy ra lỗi khi xóa tệp.');
+                }
+            }
+
+            async function scanLocalFiles() {
+                scanBtn.disabled = true;
+                scanBtn.textContent = 'Đang quét...';
+                try {
+                    const response = await fetch('/api/scan_local_files', { method: 'POST' });
+                    const result = await response.json();
+                    alert(result.message || result.error);
+                } catch (error) {
+                    console.error('Lỗi khi quét:', error);
+                    alert('Đã xảy ra lỗi khi quét tệp cục bộ.');
+                } finally {
+                    scanBtn.disabled = false;
+                    scanBtn.textContent = 'Quét Tệp Cục bộ';
+                    fetchFiles();
+                }
+            }
+
+            // Gán sự kiện
+            refreshBtn.addEventListener('click', fetchFiles);
+            scanBtn.addEventListener('click', scanLocalFiles);
+            searchBox.addEventListener('input', filterAndRenderTable);
+            tableBody.addEventListener('click', function(event) {
+                const target = event.target;
+                if (target.classList.contains('delete-btn')) {
+                    deleteFile(target.dataset.filename, target.dataset.source);
+                }
+                if (target.classList.contains('play-btn')) {
+                    window.open(`/stream/${target.dataset.filename}`, '_blank');
+                }
+            });
+
+            // Tải dữ liệu lần đầu
+            fetchFiles();
+        });
+    </script>
+</body>
+</html>
